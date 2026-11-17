@@ -7,8 +7,8 @@ operating system's own sandboxing mechanism, runs the workload and passes the
 workload's stdout, stderr and exit code back.
 
 Everything this module assumes about the executor's behaviour was observed by
-running it; see `EXECUTOR_CONTRACT.md` at the package root. In short there are
-three kinds of result:
+running `@microsoft/mxc-sdk` 1.0.1 on Windows, macOS and Linux. There are three
+kinds of result:
 
 1. the workload ran: exit code and streams are the workload's own;
 2. the request was rejected before a sandbox existed: exit 1, empty stdout,
@@ -20,6 +20,7 @@ three kinds of result:
 
 from __future__ import annotations
 
+import contextlib
 import glob
 import json
 import os
@@ -30,7 +31,6 @@ import signal
 import subprocess
 import sys
 import tempfile
-import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -97,12 +97,10 @@ def _node_global_roots(platform: str, environ: Mapping[str, str], home: Path) ->
     """Common global `node_modules` locations, without running npm."""
     roots: list[Path] = []
     if platform == "win32":
-        for var in ("APPDATA", "LOCALAPPDATA"):
-            if environ.get(var):
-                roots.append(Path(environ[var]) / "npm" / "node_modules")
-        for var in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
-            if environ.get(var):
-                roots.append(Path(environ[var]) / "nodejs" / "node_modules")
+        roots.extend(Path(environ[var]) / "npm" / "node_modules" for var in ("APPDATA", "LOCALAPPDATA") if environ.get(var))
+        roots.extend(
+            Path(environ[var]) / "nodejs" / "node_modules" for var in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432") if environ.get(var)
+        )
         roots.append(home / "scoop" / "apps" / "nodejs" / "current" / "node_modules")
         return roots
 
@@ -156,10 +154,8 @@ def candidate_executor_paths(
         candidates.append(Path(env[ENV_EXECUTOR_PATH]).expanduser())
     if env.get(ENV_BIN_DIR):
         candidates.append(Path(env[ENV_BIN_DIR]).expanduser() / arch / name)
-    for directory in (cwd, *cwd.parents):
-        candidates.append(directory / rel)
-    for root in _node_global_roots(plat, env, home):
-        candidates.append(root / SDK_PACKAGE / "bin" / arch / name)
+    candidates.extend(directory / rel for directory in (cwd, *cwd.parents))
+    candidates.extend(root / SDK_PACKAGE / "bin" / arch / name for root in _node_global_roots(plat, env, home))
     found_on_path = shutil.which(name)
     if found_on_path:
         candidates.append(Path(found_on_path))
@@ -172,7 +168,7 @@ def _npm_global_root(timeout: float = 15.0) -> Path | None:
     if not npm:
         return None
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # noqa: S603 - fixed argv; `npm` comes from `shutil.which`
             [npm, "root", "-g"],
             capture_output=True,
             text=True,
@@ -274,8 +270,6 @@ class ExecutorResult:
     returncode: int | None
     timed_out: bool = False
     """True when the host-side wait expired and the process tree was killed."""
-    duration: float = 0.0
-    argv: list[str] = field(default_factory=list)
 
     @property
     def stdout_text(self) -> str:
@@ -302,7 +296,7 @@ def _posix_descendants(root_pid: int) -> list[int]:
     """Return every descendant pid of `root_pid` using `ps` (stdlib only)."""
     try:
         proc = subprocess.run(
-            ["ps", "-axo", "pid=,ppid="],
+            ["ps", "-axo", "pid=,ppid="],  # noqa: S607 - system `ps`, resolved through PATH like a shell would
             capture_output=True,
             text=True,
             timeout=10,
@@ -336,12 +330,12 @@ def kill_process_tree(pid: int) -> None:
     """Kill `pid` and every descendant, including their process groups.
 
     The executor starts the workload shell in a process group of its own, so
-    killing the executor alone leaves the workload running (verified; see
-    `EXECUTOR_CONTRACT.md`).
+    killing the executor alone leaves the workload running (verified on macOS
+    and Linux).
     """
     if sys.platform == "win32":
-        subprocess.run(
-            ["taskkill", "/F", "/T", "/PID", str(pid)],
+        subprocess.run(  # noqa: S603 - fixed argv; the pid is an int
+            ["taskkill", "/F", "/T", "/PID", str(pid)],  # noqa: S607 - system `taskkill`, resolved through PATH
             capture_output=True,
             check=False,
             stdin=subprocess.DEVNULL,
@@ -356,15 +350,11 @@ def kill_process_tree(pid: int) -> None:
         except ProcessLookupError:
             continue
         if pgid not in {own_pgid, 0, 1}:
-            try:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(pgid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
     for target in targets:
-        try:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
             os.kill(target, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
 
 
 def run_request(
@@ -406,18 +396,17 @@ def run_request(
             json.dump(request, handle)
         argv += ["--config", config_path, *extra_args]
 
-        popen_kwargs: dict[str, Any] = {
-            "stdin": subprocess.DEVNULL,
-            "stdout": subprocess.PIPE,
-            "stderr": subprocess.PIPE,
-        }
-        if sys.platform == "win32":
-            popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        else:
-            popen_kwargs["start_new_session"] = True
+        windows = sys.platform == "win32"
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0) if windows else 0
 
-        started = time.monotonic()
-        proc = subprocess.Popen(argv, **popen_kwargs)
+        proc = subprocess.Popen(  # noqa: S603 - running the MXC executor is this function's purpose
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            creationflags=creationflags,
+            start_new_session=not windows,
+        )
         timed_out = False
         wait_for = None if timeout is None else max(timeout, 0) + max(grace, 0)
         try:
@@ -438,14 +427,10 @@ def run_request(
             stderr=stderr or b"",
             returncode=proc.returncode,
             timed_out=timed_out,
-            duration=time.monotonic() - started,
-            argv=argv,
         )
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(config_path)
-        except OSError:
-            pass
 
 
 # ---------------------------------------------------------------------------
@@ -495,11 +480,8 @@ def _parse_envelope(line: str) -> tuple[str | None, str] | None:
     return (None, str(error))
 
 
-def classify_result(result: ExecutorResult) -> Outcome:
-    """Classify an executor result per the observed contract.
-
-    See the module docstring and `EXECUTOR_CONTRACT.md`.
-    """
+def classify_result(result: ExecutorResult) -> Outcome:  # noqa: C901, PLR0911 - one flat branch per observed executor outcome
+    """Classify an executor result per the observed contract described in the module docstring."""
     stdout = result.stdout_text
     stderr = result.stderr_text
 
@@ -582,7 +564,7 @@ _DRY_RUN_FAILED = "validation failed"
 def _dry_run_failure_reason(result: ExecutorResult) -> str:
     """Extract the reason from a failed `--dry-run`.
 
-    Observed forms (see `EXECUTOR_CONTRACT.md`): a policy the backend cannot
+    Observed forms: a policy the backend cannot
     enforce exits 255 with `Dry run completed. Result: validation failed: <reason>`
     on **stdout**; a malformed request or a missing backend exits 1 with the
     reason on stderr.
@@ -611,7 +593,7 @@ def _is_under(path: Path, parent: Path) -> bool:
     return True
 
 
-def probe_executor(
+def probe_executor(  # noqa: C901, PLR0911, PLR0912, PLR0915 - a linear checklist; each step returns its own failure
     executor: ExecutorCommand,
     build_request: Callable[[str], Mapping[str, Any]],
     *,

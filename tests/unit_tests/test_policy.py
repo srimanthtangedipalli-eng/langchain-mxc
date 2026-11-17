@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -14,6 +14,9 @@ from langchain_mxc._policy import (
     is_under,
     wrap_command,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 def make_host(
@@ -37,7 +40,7 @@ def make_host(
         platform=platform,
         environ=environ or {},
         home=home,
-        which=lambda tool: which.get(tool),
+        which=which.get,
         exists=_exists,
         realpath=lambda p: real.get(p, p),
         sys_prefixes=sys_prefixes,

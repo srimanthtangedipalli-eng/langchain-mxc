@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from langchain_mxc import MXCSandbox
 from langchain_mxc._policy import CLIPBOARD_LEVELS, HostInfo, SandboxPolicy
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 LOCKED_DOWN = {"disable": True, "clipboard": "none", "injection": False}
 

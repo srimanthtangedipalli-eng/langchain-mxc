@@ -48,7 +48,7 @@ TIMEOUT_EXIT_CODE = 124
 
 BLOCKED_HINT = "Blocked by sandbox policy: {what}. Ask the user to grant access if this is needed."
 
-# Observed denial text (see EXECUTOR_CONTRACT.md). The first form is what
+# Observed denial text. The first form is what
 # shells and coreutils print (`cat: /path: Operation not permitted`), the
 # second is Python's (`PermissionError: [Errno 1] Operation not permitted: '/path'`).
 _DENIAL_WORDS = r"(?:Operation not permitted|Permission denied|Access is denied)"
@@ -167,7 +167,7 @@ class MXCSandbox(FilesystemBackend, SandboxBackendProtocol):
             msg = f"timeout must be positive, got {timeout}"
             raise ValueError(msg)
 
-        super().__init__(root_dir=root_dir, virtual_mode=True, max_file_size_mb=10)
+        super().__init__(root_dir=os.fspath(root_dir), virtual_mode=True, max_file_size_mb=10)
 
         self._default_timeout = timeout
         self._max_output_bytes = max_output_bytes
@@ -178,7 +178,7 @@ class MXCSandbox(FilesystemBackend, SandboxBackendProtocol):
 
         scratch = Path(tempfile.mkdtemp(prefix=f"langchain-mxc-{self._sandbox_id}-")).resolve()
         self._scratch_dir = scratch
-        self._finalizer = weakref.finalize(self, shutil.rmtree, str(scratch), True)
+        self._finalizer = weakref.finalize(self, shutil.rmtree, str(scratch), True)  # noqa: FBT003 - `ignore_errors`; `finalize` forwards only positionals
 
         self._host = HostInfo.current()
         self._policy = SandboxPolicy.create(
@@ -314,7 +314,9 @@ class MXCSandbox(FilesystemBackend, SandboxBackendProtocol):
 
     # -- response formatting ------------------------------------------------
 
-    def _format_response(self, result: ExecutorResult, *, effective_timeout: float, custom_timeout: bool, command: str = "") -> ExecuteResponse:
+    def _format_response(  # noqa: C901 - one branch per executor outcome
+        self, result: ExecutorResult, *, effective_timeout: float, custom_timeout: bool, command: str = ""
+    ) -> ExecuteResponse:
         outcome = classify_result(result)
 
         if outcome.kind in {"timeout", "host_timeout"}:
@@ -385,7 +387,7 @@ class MXCSandbox(FilesystemBackend, SandboxBackendProtocol):
             return False
         return os.path.lexists(path) or os.path.isdir(os.path.dirname(path))
 
-    def _denial_hint(self, outcome: Outcome, *, exit_code: int, command: str = "") -> str | None:
+    def _denial_hint(self, outcome: Outcome, *, exit_code: int, command: str = "") -> str | None:  # noqa: C901 - one check per observed denial shape
         """One line naming what the sandbox blocked, or None."""
         text = f"{outcome.workload_stderr}\n{outcome.workload_stdout}"
         if (
@@ -398,11 +400,7 @@ class MXCSandbox(FilesystemBackend, SandboxBackendProtocol):
             return WINDOWS_DELETE_HINT
         blocked: list[str] = []
 
-        candidates: list[str] = []
-        for match in _DENIAL_PATH_BEFORE.finditer(text):
-            candidates.append(match.group("path").strip())
-        for match in _DENIAL_PATH_AFTER.finditer(text):
-            candidates.append(match.group("path").strip())
+        candidates = [match.group("path").strip() for pattern in (_DENIAL_PATH_BEFORE, _DENIAL_PATH_AFTER) for match in pattern.finditer(text)]
         for path in candidates:
             if path and not self._policy.is_allowed(path) and path not in blocked:
                 blocked.append(path)

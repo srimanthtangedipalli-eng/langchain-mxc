@@ -29,7 +29,12 @@ def _alive(pid: int) -> bool:
     if sys.platform == "win32":
         import subprocess  # noqa: PLC0415
 
-        out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"], capture_output=True, text=True, check=False).stdout
+        out = subprocess.run(  # noqa: S603 - fixed argv; the pid is an int
+            ["tasklist", "/FI", f"PID eq {pid}"],  # noqa: S607 - system `tasklist`, resolved through PATH
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
         return str(pid) in out
     try:
         os.kill(pid, 0)

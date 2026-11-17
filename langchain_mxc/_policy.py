@@ -28,9 +28,11 @@ import posixpath
 import shlex
 import shutil
 import sys
-from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
 SCHEMA_VERSION = "1.0.0"
 CONTAINMENT = "process"
@@ -43,7 +45,7 @@ TOOLCHAIN_TOOLS: tuple[str, ...] = ("python", "python3", "git", "node")
 
 SYSTEM_READONLY_PATHS: dict[str, tuple[str, ...]] = {
     # `/dev` is deliberately absent: listing it on macOS overrides the
-    # baseline read-write rule for /dev/null (see EXECUTOR_CONTRACT.md).
+    # baseline read-write rule for /dev/null (observed with mxc-sdk 1.0.1).
     "darwin": (
         "/bin",
         "/sbin",
@@ -235,7 +237,7 @@ def _install_prefix(host: HostInfo, exe: str) -> str | None:
     return None
 
 
-def toolchain_paths(host: HostInfo) -> tuple[list[str], list[str]]:
+def toolchain_paths(host: HostInfo) -> tuple[list[str], list[str]]:  # noqa: C901 - one branch per OS and per toolchain layout
     """Detect the toolchain.
 
     Returns:
@@ -356,7 +358,7 @@ class SandboxPolicy:
     """Let commands send synthetic keyboard and mouse input (`ui.injection`)."""
 
     @classmethod
-    def create(
+    def create(  # noqa: C901 - assembles each policy section in turn
         cls,
         *,
         root_dir: str,

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import socket
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from langchain_mxc._executor import MXCExecutorNotFoundError, MXCUnsupportedPlatformError, find_executor
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _BINARY_LIMIT_REASON = (
     "FilesystemBackend.read returns binary files of any size as base64; only BaseSandbox "

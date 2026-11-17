@@ -273,7 +273,9 @@ def test_ui_options_change_the_seatbelt_profile(root: Path, executor: Path) -> N
         sandbox = MXCSandbox(root_dir=root, executor_path=executor, **kwargs)  # type: ignore[arg-type]
         cfg = root / f"req-{sandbox.id}.json"
         cfg.write_text(json.dumps(sandbox.build_request("true", 10)))
-        proc = subprocess.run([str(executor), "--config", str(cfg), "--debug"], capture_output=True, text=True, timeout=60, check=False)
+        proc = subprocess.run(  # noqa: S603 - the executor under test, with a config this test wrote
+            [str(executor), "--config", str(cfg), "--debug"], capture_output=True, text=True, timeout=60, check=False
+        )
         return proc.stdout + proc.stderr
 
     locked = profile()

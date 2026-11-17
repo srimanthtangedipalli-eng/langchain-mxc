@@ -6,13 +6,16 @@ import os
 import shutil
 import sys
 import tempfile
-from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from langchain_tests.integration_tests import SandboxIntegrationTests
 
 from langchain_mxc import MXCSandbox
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 # Created at import so `sandbox_root_dir` is known before any fixture runs.
 _ROOT = os.path.realpath(tempfile.mkdtemp(prefix="langchain-mxc-standard-"))
@@ -35,6 +38,9 @@ class _ConformanceSandbox(MXCSandbox):
 
 @pytest.mark.requires_mxc
 @pytest.mark.skipif(sys.platform == "win32", reason="the shared suite uses POSIX commands (cat, wc, chmod, mkdir -p)")
+# `SandboxIntegrationTests` declares its class-scoped fixtures as instance methods, which
+# pytest deprecates; the shared suite's fixtures cannot be changed from here.
+@pytest.mark.filterwarnings("ignore:Class-scoped fixture:pytest.PytestRemovedIn10Warning")
 class TestMXCSandboxStandard(SandboxIntegrationTests):
     @property
     def sandbox_root_dir(self) -> str:

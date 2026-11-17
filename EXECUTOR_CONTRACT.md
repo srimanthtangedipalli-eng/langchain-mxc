@@ -313,5 +313,23 @@ not elevated, `wxc-host-prep.exe` never run.
   `scripts/windows/diagnose.py` checks this.
 - Output uses CRLF line endings; the package normalises them to LF.
 - `--help` lists `--audit` ("permissive allow mode"). The package never passes it.
-- Not yet observed on Windows: `deniedPaths`, executor-side timeout, anything
-  on x64.
+- Confirmed with `allow_ui=True` (`ui.disable: false`): `git`, `where`,
+  `node`, PowerShell, `whoami`, Python `platform` and `ctypes`, and full
+  `pytest` runs all work. With `ui.disable: true` only cmd built-ins, basic
+  Python and `curl.exe` run. Package default stays `allow_ui=False` (decided
+  2026-11-17: security first, documented as needed on Windows).
+- Executor-side timeout works: a 30 s sleep with a 2 s limit returns in 2.7 s.
+- `deniedPaths` works: a folder inside a read-only folder stays unreadable
+  (`Access is denied.`).
+- **Deleting with cmd's `del`/`erase` and PowerShell's `Remove-Item` is denied
+  inside `readwritePaths`**, with or without the UI. These work in the same
+  folder: Python `os.remove` (including files created outside the sandbox),
+  `shutil.rmtree`, Node `fs.unlinkSync`, `git rm`, `git clean`, `rmdir /s /q`
+  (including a folder with files), `ren`, `move /y`, overwrite. `attrib` on a
+  file in the folder prints `Path not found` for the folder itself. Cause
+  unknown; question for Microsoft. The package adds a hint naming working
+  alternatives when a delete command gets `Access is denied`.
+- File ACLs inside the sandbox show the folder's normal inherited entries
+  (temp folders: `OWNER RIGHTS`; project folder: the user). No AppContainer
+  entry is visible, so access is granted by the container, not by ACLs.
+- Not yet observed on Windows: anything on x64 or on build 26100.

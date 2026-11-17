@@ -135,6 +135,18 @@ Credential folders stay blocked even when a parent folder is granted. For exampl
 
 The window, clipboard, and input settings are enforced on Windows and macOS. Linux ignores them.
 
+## Windows
+
+On Windows, most developer tools load the window system when they start, even if they never open a window. With `allow_ui=False`, the default, `git`, `node`, PowerShell, and `pytest` cannot start. Coding agents on Windows usually need:
+
+```python
+backend = MXCSandbox(root_dir="./my-project", allow_ui=True)
+```
+
+Clipboard access and input injection stay off unless you set them separately.
+
+The sandbox also denies `del`, `erase`, and PowerShell's `Remove-Item`, even inside `root_dir`. Python's `os.remove`, `git rm`, and `rmdir /s /q` work. When `del` is denied, the agent is told which alternatives to use.
+
 ## Security model
 
 - **Shell commands are enforced by the operating system.** Each command runs in its own MXC sandbox, which is removed when the command exits.

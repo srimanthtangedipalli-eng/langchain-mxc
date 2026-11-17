@@ -209,6 +209,16 @@ def test_windows_git_runs_with_allow_ui(root: Path, executor: Path) -> None:
     assert "git version" in resp.output
 
 
+@pytest.mark.skipif(not IS_WINDOWS, reason="Windows-only: cmd's del is denied inside read-write folders")
+def test_windows_del_is_denied_with_a_workaround_hint(sandbox: MXCSandbox, root: Path) -> None:
+    resp = sandbox.execute("echo a> gone.txt && del gone.txt")
+    assert resp.exit_code != 0
+    assert "Note: on Windows the sandbox denies `del`" in resp.output, resp.output
+    resp = sandbox.execute("python -c \"import os; os.remove('gone.txt')\"")
+    assert resp.exit_code == 0, resp.output
+    assert not (root / "gone.txt").exists()
+
+
 def test_output_truncation(root: Path, executor: Path) -> None:
     sandbox = MXCSandbox(root_dir=root, executor_path=executor, max_output_bytes=2000)
     resp = sandbox.execute("python -c \"print('x' * 10000)\"")

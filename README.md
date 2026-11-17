@@ -2,7 +2,7 @@
 
 Microsoft Execution Containers (MXC) sandbox backend for [Deep Agents](https://github.com/langchain-ai/deepagents).
 
-> **Private preview.** Built for the Microsoft Ignite preview. Verified on macOS (Seatbelt) and on Linux (bubblewrap, in a privileged Debian container). The Windows path is implemented from MXC's contract but has not been run yet; see [Status](#status).
+> **Private preview.** Built for the Microsoft Ignite preview. Verified on macOS (Seatbelt), on Windows 11 ARM64 (process container), and on Linux (bubblewrap, in a privileged Debian container). See [Windows](#windows) for two Windows differences, and [Status](#status).
 
 ## What it is
 
@@ -69,7 +69,7 @@ backend = MXCSandbox(
     read_only_paths=["~/datasets"],      # extra folders the commands may read
     read_write_paths=[],                 # extra folders the commands may write
     allow_network=False,                 # outbound network, off by default
-    allow_ui=False,                      # windows / GUI for commands, off by default
+    allow_ui=False,                      # windows / GUI for commands, off by default; on Windows, git/node/pytest need True
     clipboard="none",                    # "none", "read", "write" or "all"
     allow_input_injection=False,         # synthetic keyboard/mouse input, off by default
     env={"PYTHONUNBUFFERED": "1"},       # layered on the minimal sandbox environment
@@ -101,6 +101,19 @@ Every command runs with this MXC policy (contract version 1.0.0, containment `pr
 | Timeout | 120 s per command | Passed to MXC as `process.timeout`, which kills the whole process tree. The host waits 5 s longer, then kills the executor and every descendant itself. |
 
 `backend.build_request("echo hi")` returns the exact JSON sent to the executor if you want to inspect it.
+
+## Windows
+
+Two things behave differently on Windows (observed with `wxc-exec.exe` 1.0.1 on Windows 11 build 28000, ARM64):
+
+- **Most toolchains need `allow_ui=True`.** With the window system locked (the default), `git`, `node`, PowerShell and `pytest` cannot start: they load window-system libraries at start-up even though they never open a window. The default stays locked because it is MXC's own default and the safer choice. Coding agents on Windows will usually want:
+
+  ```python
+  backend = MXCSandbox(root_dir="./my-project", allow_ui=True)
+  ```
+
+  Clipboard access and input injection stay off unless you set them separately. When a program fails for this reason, the response says that window-system access was blocked and names `allow_ui=False` as the cause.
+- **`del`, `erase` and PowerShell's `Remove-Item` are denied, even inside `root_dir`.** Other ways of deleting work: Python's `os.remove` and `shutil.rmtree`, Node's `fs.unlinkSync`, `git rm`, `git clean`, `rmdir /s /q` and `move /y`. When `del` is denied, the response tells the agent to use one of those instead.
 
 ## Security model
 
@@ -161,9 +174,9 @@ This prints the resolved read-write, read-only and denied paths plus the exact r
 
 ## Status
 
-Verified on macOS 26.7 (Apple Silicon, Seatbelt) and on Linux (Debian 12 in a privileged Docker container, arm64, bubblewrap 0.8) with `@microsoft/mxc-sdk` 1.0.1. Everything observed about the executors is in [`EXECUTOR_CONTRACT.md`](EXECUTOR_CONTRACT.md), including the places where they differ from MXC's documentation.
+Verified with `@microsoft/mxc-sdk` 1.0.1 on macOS 26.7 (Apple Silicon, Seatbelt), on Windows 11 26H1 build 28000.3501 (ARM64, process container, not elevated, no host preparation), and on Linux (Debian 12 in a privileged Docker container, arm64, bubblewrap 0.8). Everything observed about the executors is in [`EXECUTOR_CONTRACT.md`](EXECUTOR_CONTRACT.md), including the places where they differ from MXC's documentation.
 
-Not yet verified: Windows (`wxc-exec.exe`, including `deniedPaths` enforcement and the error text for blocked actions), and Linux outside a container or on x64. The Windows policy is unit-tested with a mocked host, but a real run is needed before the preview ships there. bubblewrap cannot start inside a default Docker container; the backend reports that and runs nothing.
+Not yet verified: Windows on x64 or on 24H2 (build 26100), and Linux outside a container or on x64. On Windows the shared `SandboxIntegrationTests` suite is skipped because it uses POSIX commands; the package's own integration tests cover the same ground with Windows commands. Installing `deepagents` on Windows ARM64 currently needs a Rust compiler, because `cryptography` (a `deepagents` dependency) has no prebuilt Windows ARM64 package after 46.0.3; `pip install "cryptography==46.0.3"` first avoids that. bubblewrap cannot start inside a default Docker container; the backend reports that and runs nothing.
 
 The public API (`MXCSandbox` and its constructor) is fixed so the executor-based internals can be swapped for an official MXC Python SDK later without breaking users.
 

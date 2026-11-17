@@ -398,3 +398,28 @@ def test_ordinary_failure_on_windows_gets_no_ui_hint(sandbox: MXCSandbox) -> Non
     sandbox._host = dataclasses.replace(sandbox._host, platform="win32")
     resp = fmt(sandbox, result("", "1 failed, 2 passed\n", 1))
     assert "Blocked by sandbox policy" not in resp.output
+
+
+def test_windows_del_denied_gets_the_delete_hint(sandbox: MXCSandbox) -> None:
+    from langchain_mxc.sandbox import WINDOWS_DELETE_HINT  # noqa: PLC0415
+
+    sandbox._host = dataclasses.replace(sandbox._host, platform="win32")
+    for command in ("del notes.txt", "echo a> x.txt && del /q x.txt", 'powershell -Command "Remove-Item x.txt"'):
+        resp = sandbox._format_response(result("", "Access is denied.\n", 1), effective_timeout=10, custom_timeout=False, command=command)
+        assert resp.output.endswith(WINDOWS_DELETE_HINT), command
+        assert "outside the allowed folders" not in resp.output
+
+
+def test_windows_read_denied_keeps_the_policy_hint(sandbox: MXCSandbox) -> None:
+    sandbox._host = dataclasses.replace(sandbox._host, platform="win32")
+    resp = sandbox._format_response(
+        result("", "Access is denied.\n", 1), effective_timeout=10, custom_timeout=False, command='type "C:\\Users\\me\\secret.txt"'
+    )
+    assert "Blocked by sandbox policy: a path outside the allowed folders" in resp.output
+    assert "Note: on Windows the sandbox denies `del`" not in resp.output
+
+
+def test_del_hint_is_windows_only(sandbox: MXCSandbox) -> None:
+    sandbox._host = dataclasses.replace(sandbox._host, platform="darwin")
+    resp = sandbox._format_response(result("", "Access is denied.\n", 1), effective_timeout=10, custom_timeout=False, command="del x")
+    assert "Note: on Windows" not in resp.output

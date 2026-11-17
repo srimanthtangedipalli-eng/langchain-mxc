@@ -70,6 +70,15 @@ _NETWORK_DENIAL = re.compile(
 )
 
 
+# Observed on Windows (wxc-exec 1.0.1, build 28000): cmd's `del`/`erase` and
+# PowerShell's `Remove-Item` are denied even inside read-write folders, while
+# Python, Node and git deletes, `rmdir /s` and `move /y` work.
+_WINDOWS_DELETE_COMMAND = re.compile(r"(?:^|[\s&|(;\"'])(?:del|erase|Remove-Item|ri)\s", re.IGNORECASE)
+_WINDOWS_DELETE_DENIED = re.compile(r"Access is denied")
+WINDOWS_DELETE_HINT = (
+    "Note: on Windows the sandbox denies `del`, `erase` and PowerShell's `Remove-Item`, even inside the allowed folders. "
+    "Delete files with `python -c \"import os; os.remove('FILE')\"` and folders with `rmdir /s /q FOLDER` instead."
+)
 _UI_BLOCKED = re.compile(r"STATUS_DLL_INIT_FAILED|0xC0000142|Win32k", re.IGNORECASE)
 _UI_CRASH_EXIT_CODES = frozenset({0xC0000142, 0xC06D007E})  # DLL init failed; delay-loaded module not found
 _UI_CRASH_TEXT = re.compile(r"DLL\) initialization routine failed|Windows fatal exception: code 0xc06d007e", re.IGNORECASE)
@@ -126,7 +135,10 @@ class MXCSandbox(FilesystemBackend, SandboxBackendProtocol):
                 Off by default.
             allow_ui: Let commands create windows and use the GUI. Off by
                 default (MXC's own default). Needed for GUI app tests or a
-                headed browser.
+                headed browser. **On Windows, most toolchains need it:**
+                `git`, `node`, PowerShell and `pytest` cannot start while it
+                is off, and the response says so when that happens. Clipboard
+                and input injection stay off unless set separately.
             clipboard: Clipboard access for commands: `"none"` (default),
                 `"read"` (commands can read the user's clipboard), `"write"`
                 (commands can replace it) or `"all"`.
@@ -298,11 +310,11 @@ class MXCSandbox(FilesystemBackend, SandboxBackendProtocol):
         except Exception as e:  # noqa: BLE001 - mirror LocalShellBackend: always return a response
             return ExecuteResponse(output=f"Error executing command ({type(e).__name__}): {e}", exit_code=1, truncated=False)
 
-        return self._format_response(result, effective_timeout=effective_timeout, custom_timeout=timeout is not None)
+        return self._format_response(result, effective_timeout=effective_timeout, custom_timeout=timeout is not None, command=command)
 
     # -- response formatting ------------------------------------------------
 
-    def _format_response(self, result: ExecutorResult, *, effective_timeout: float, custom_timeout: bool) -> ExecuteResponse:
+    def _format_response(self, result: ExecutorResult, *, effective_timeout: float, custom_timeout: bool, command: str = "") -> ExecuteResponse:
         outcome = classify_result(result)
 
         if outcome.kind in {"timeout", "host_timeout"}:
@@ -352,7 +364,7 @@ class MXCSandbox(FilesystemBackend, SandboxBackendProtocol):
         if exit_code != 0:
             output = f"{output.rstrip()}\n\nExit code: {exit_code}"
 
-        hint = self._denial_hint(outcome, exit_code=exit_code)
+        hint = self._denial_hint(outcome, exit_code=exit_code, command=command)
         if hint:
             output = f"{output.rstrip()}\n{hint}"
 
@@ -373,9 +385,17 @@ class MXCSandbox(FilesystemBackend, SandboxBackendProtocol):
             return False
         return os.path.lexists(path) or os.path.isdir(os.path.dirname(path))
 
-    def _denial_hint(self, outcome: Outcome, *, exit_code: int) -> str | None:
+    def _denial_hint(self, outcome: Outcome, *, exit_code: int, command: str = "") -> str | None:
         """One line naming what the sandbox blocked, or None."""
         text = f"{outcome.workload_stderr}\n{outcome.workload_stdout}"
+        if (
+            self._host.platform == "win32"
+            and exit_code != 0
+            and _WINDOWS_DELETE_COMMAND.search(command)
+            and _WINDOWS_DELETE_DENIED.search(text)
+            and not any(m.group("path").strip() for m in _DENIAL_PATH_BEFORE.finditer(text))
+        ):
+            return WINDOWS_DELETE_HINT
         blocked: list[str] = []
 
         candidates: list[str] = []

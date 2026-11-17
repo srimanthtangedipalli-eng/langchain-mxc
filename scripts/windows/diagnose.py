@@ -89,20 +89,58 @@ def denied_paths(root: Path, shared: Path) -> None:
         print(f"    stderr: {done.stderr.strip()[:MAX_SHOWN]}")
 
 
+def file_operations(label: str, root: Path) -> None:
+    """Delete, rename and overwrite inside the read-write project folder."""
+    (root / "host-made.txt").write_text("made by the host", encoding="utf-8")
+    locked = MXCSandbox(root_dir=root)
+    opened = MXCSandbox(root_dir=root, allow_ui=True)
+    for command in (
+        "echo a> made.txt && del made.txt && echo del-ok",
+        "echo a> ren1.txt && ren ren1.txt ren2.txt && echo ren-ok",
+        "echo a> over.txt && echo b> over.txt && type over.txt",
+        "mkdir newdir && rmdir newdir && echo rmdir-ok",
+        "del host-made.txt && echo del-host-file-ok",
+        "python -c \"import os; open('p.txt','w').write('x'); os.remove('p.txt'); print('py-remove-ok')\"",
+        "python -c \"import os; open('p.txt','w').write('x'); os.replace('p.txt','q.txt'); print('py-replace-ok')\"",
+        'echo a> "%TEMP%\\scratch.txt" && del "%TEMP%\\scratch.txt" && echo scratch-del-ok',
+    ):
+        show(f"{label}, ui locked", locked, command)
+    show(f"{label}, allow_ui", opened, "echo a> made2.txt && del made2.txt && echo del-ok")
+    show(f"{label}, allow_ui", opened, "echo a> acl-check.txt && icacls . && icacls acl-check.txt")
+    for target in (root, root / "acl-check.txt"):
+        done = subprocess.run(["icacls", str(target)], capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL, timeout=30)
+        print(f"\n--- [{label}, host view] icacls {target}")
+        print("    " + done.stdout.strip().replace("\n", "\n    ")[:MAX_SHOWN])
+    print(f"\n--- [{label}] left in the folder: {sorted(p.name for p in root.iterdir())}")
+
+
 def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="mxc-diagnose-"))
+    in_project = SAMPLE_REPO.parent / ".mxc-diagnose-root"
     try:
         root = work / "repo"
         shutil.copytree(SAMPLE_REPO, root, ignore=shutil.ignore_patterns(".pytest_cache", "__pycache__"))
         shared = work / "shared"
         shared.mkdir()
-        for section in (lambda: ui_matrix(root), lambda: timeouts(root), lambda: network(root), lambda: denied_paths(root, shared)):
+        in_temp = work / "fileops"
+        in_temp.mkdir()
+        in_project.mkdir(exist_ok=True)
+        sections = (
+            lambda: file_operations("temp folder", in_temp),
+            lambda: file_operations("folder inside the project", in_project),
+            lambda: ui_matrix(root),
+            lambda: timeouts(root),
+            lambda: network(root),
+            lambda: denied_paths(root, shared),
+        )
+        for section in sections:
             try:
                 section()
             except Exception as exc:  # noqa: BLE001 - keep going so one failure does not hide the rest
                 print(f"\nSECTION FAILED: {type(exc).__name__}: {exc}")
     finally:
         shutil.rmtree(work, ignore_errors=True)
+        shutil.rmtree(in_project, ignore_errors=True)
     return 0
 
 

@@ -12,3 +12,4 @@ package.json
 package-lock.json
 windows-test-logs/
 .benchmarks/
+.mxc-diagnose-root/

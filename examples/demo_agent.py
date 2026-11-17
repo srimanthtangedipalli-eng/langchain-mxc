@@ -134,7 +134,10 @@ def copy_sample_repo(destination: Path | None = None) -> Path:
 
 def build_backend(root_dir: Path) -> MXCSandbox:
     """The sandbox: writes limited to `root_dir`, network off."""
-    return MXCSandbox(root_dir=root_dir, timeout=180)
+    # Observed on Windows: git, node, PowerShell and pytest cannot start while the
+    # window system is locked, so the demo opens it there. Clipboard access and
+    # input injection stay off.
+    return MXCSandbox(root_dir=root_dir, timeout=180, allow_ui=sys.platform == "win32")
 
 
 def build_agent(model: str | BaseChatModel | None = None, *, root_dir: Path | None = None):  # noqa: ANN201 - deep agent graph type is internal

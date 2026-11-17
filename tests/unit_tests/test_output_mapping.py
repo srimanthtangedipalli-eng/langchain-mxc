@@ -382,3 +382,19 @@ def test_crlf_output_is_normalised(sandbox: MXCSandbox) -> None:
     resp = fmt(sandbox, result("one\r\ntwo\r\n", "", 0))
     assert "\r" not in resp.output
     assert "one\ntwo" in resp.output
+
+
+def test_windows_crash_with_ui_locked_gets_the_ui_hint(sandbox: MXCSandbox) -> None:
+    sandbox._host = dataclasses.replace(sandbox._host, platform="win32")
+    crash = fmt(sandbox, result("", "Windows fatal exception: code 0xc06d007e\n", 0xC06D007E))
+    assert "Blocked by sandbox policy: window-system access" in crash.output
+    dll = fmt(
+        sandbox, result("", "ImportError: DLL load failed while importing _ctypes: A dynamic link library (DLL) initialization routine failed.\n", 1)
+    )
+    assert "Blocked by sandbox policy: window-system access" in dll.output
+
+
+def test_ordinary_failure_on_windows_gets_no_ui_hint(sandbox: MXCSandbox) -> None:
+    sandbox._host = dataclasses.replace(sandbox._host, platform="win32")
+    resp = fmt(sandbox, result("", "1 failed, 2 passed\n", 1))
+    assert "Blocked by sandbox policy" not in resp.output

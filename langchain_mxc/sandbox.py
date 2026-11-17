@@ -71,6 +71,8 @@ _NETWORK_DENIAL = re.compile(
 
 
 _UI_BLOCKED = re.compile(r"STATUS_DLL_INIT_FAILED|0xC0000142|Win32k", re.IGNORECASE)
+_UI_CRASH_EXIT_CODES = frozenset({0xC0000142, 0xC06D007E})  # DLL init failed; delay-loaded module not found
+_UI_CRASH_TEXT = re.compile(r"DLL\) initialization routine failed|Windows fatal exception: code 0xc06d007e", re.IGNORECASE)
 
 
 class MXCSandbox(FilesystemBackend, SandboxBackendProtocol):
@@ -402,6 +404,13 @@ class MXCSandbox(FilesystemBackend, SandboxBackendProtocol):
 
         if network_hit:
             blocked.append("network")
+
+        # Observed on Windows: with the window system locked, a program that loads
+        # it part-way through dies with one of these instead of the executor's own
+        # start-up error (Python's `platform` and `ctypes` do).
+        ui_crash = exit_code in _UI_CRASH_EXIT_CODES or _UI_CRASH_TEXT.search(outcome.workload_stderr) is not None
+        if not blocked and self._host.platform == "win32" and not self._policy.allow_ui and ui_crash:
+            blocked.append("window-system access, which this program appears to need (MXCSandbox was created with allow_ui=False)")
 
         if not blocked:
             return None

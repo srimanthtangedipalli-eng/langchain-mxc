@@ -114,6 +114,41 @@ def file_operations(label: str, root: Path) -> None:
     print(f"\n--- [{label}] left in the folder: {sorted(p.name for p in root.iterdir())}")
 
 
+def delete_matrix(root: Path) -> None:
+    """Which ways of deleting a file work inside the read-write project folder.
+
+    Run 3 showed cmd's `del` denied everywhere while Python's `os.remove`,
+    `ren` and `rmdir` work. This narrows down which tools are affected.
+    """
+    (root / "host-made.txt").write_text("made by the host", encoding="utf-8")
+    locked = MXCSandbox(root_dir=root)
+    opened = MXCSandbox(root_dir=root, allow_ui=True)
+    for command in (
+        "echo a> d1.txt && del /f /q d1.txt && echo del-f-ok",
+        "echo a> d2.txt && erase d2.txt && echo erase-ok",
+        'echo a> d3.txt && del "%CD%\\d3.txt" && echo del-fullpath-ok',
+        "echo a> d4.tmp && del *.tmp && echo del-wildcard-ok",
+        "echo a> d5.txt && attrib d5.txt",
+        "mkdir sub && echo a> sub\\f.txt && rmdir /s /q sub && if not exist sub echo rmdir-s-ok",
+        "echo a> m1.txt && echo b> m2.txt && move /y m1.txt m2.txt && type m2.txt",
+        "python -c \"import os; os.remove('host-made.txt'); print('py-remove-host-file-ok')\"",
+        "python -c \"import os, shutil; os.makedirs('t/x'); open('t/x/f', 'w').close(); shutil.rmtree('t'); print('py-rmtree-ok')\"",
+    ):
+        show("delete, ui locked", locked, command)
+    for command in (
+        "echo a> d6.txt && del d6.txt && echo del-ok",
+        "node -e \"const fs=require('fs'); fs.writeFileSync('n.txt','x'); fs.unlinkSync('n.txt'); console.log('node-unlink-ok')\"",
+        "powershell -NoProfile -Command \"Set-Content x.txt a; Remove-Item x.txt; 'ps-remove-ok'\"",
+        (
+            "git init -q g && cd g && echo a> f.txt && git add f.txt && git -c user.email=t@example.com -c user.name=t commit -qm m"
+            " && git rm -q f.txt && if not exist f.txt echo git-rm-ok"
+        ),
+        "cd g && echo b> junk.txt && git clean -fq && if not exist junk.txt echo git-clean-ok",
+    ):
+        show("delete, allow_ui", opened, command)
+    print(f"\n--- [delete] left in the folder: {sorted(p.name for p in root.iterdir())}")
+
+
 def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="mxc-diagnose-"))
     in_project = SAMPLE_REPO.parent / ".mxc-diagnose-root"
@@ -125,7 +160,10 @@ def main() -> int:
         in_temp = work / "fileops"
         in_temp.mkdir()
         in_project.mkdir(exist_ok=True)
+        deletes = work / "deletes"
+        deletes.mkdir()
         sections = (
+            lambda: delete_matrix(deletes),
             lambda: file_operations("temp folder", in_temp),
             lambda: file_operations("folder inside the project", in_project),
             lambda: ui_matrix(root),

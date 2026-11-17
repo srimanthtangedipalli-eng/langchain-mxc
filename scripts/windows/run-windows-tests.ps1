@@ -238,6 +238,13 @@ if ($SkipDemo) {
         -Command "uv run --group test --group examples python examples\demo_agent.py$demoArgs")
 }
 
+# ---------------------------------------------------------------------------
+# 8. Diagnostics: which programs need the window system, timeouts, denied folders
+# ---------------------------------------------------------------------------
+$DiagnoseScript = Join-Path $PSScriptRoot "diagnose.py"
+[void](Invoke-Step -Name "Diagnostics" -LogName "13-diagnostics.log" -Informational `
+    -Command "uv run --group test python `"$DiagnoseScript`"")
+
 Write-Summary
 $failed = @($Results | Where-Object { $_.Status -eq "FAIL" }).Count
 if ($failed -gt 0) { exit 1 }

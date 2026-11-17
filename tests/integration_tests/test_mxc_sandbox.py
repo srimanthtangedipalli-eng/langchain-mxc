@@ -169,22 +169,44 @@ def test_network_works_when_on(root: Path, executor: Path, host_has_internet: bo
 
 
 def test_timeout_returns_124(sandbox: MXCSandbox) -> None:
-    cmd = "echo start & ping -n 40 127.0.0.1 > NUL" if IS_WINDOWS else "echo start; sleep 30; echo end"
+    # Python sleeps on every OS. (`ping` cannot be used on Windows: the sandbox blocks loopback, so it exits at once.)
+    sleep = 'python -c "import time; time.sleep(30)"'
+    cmd = f"echo start & {sleep} & echo end" if IS_WINDOWS else f"echo start; {sleep}; echo end"
     started = time.monotonic()
     resp = sandbox.execute(cmd, timeout=1)
     elapsed = time.monotonic() - started
-    assert resp.exit_code == TIMEOUT_EXIT_CODE
+    assert resp.exit_code == TIMEOUT_EXIT_CODE, resp.output
     assert "timed out after 1 seconds" in resp.output
     assert "end" not in resp.output.replace("timed out", "")
     assert elapsed < 15, f"timeout took {elapsed:.1f}s"
 
 
-def test_python_and_git_available(sandbox: MXCSandbox) -> None:
+def test_python_available(sandbox: MXCSandbox) -> None:
     resp = sandbox.execute("python --version")
     assert resp.exit_code == 0, resp.output
     assert "Python 3." in resp.output
+
+
+@pytest.mark.skipif(IS_WINDOWS, reason="on Windows git.exe cannot start while the UI is locked; see the two Windows tests below")
+def test_git_available(sandbox: MXCSandbox) -> None:
     resp = sandbox.execute("git --version")
     assert resp.exit_code == 0, resp.output
+
+
+@pytest.mark.skipif(not IS_WINDOWS, reason="Windows-only behaviour of the UI lock")
+def test_windows_git_with_ui_locked_gets_a_clear_hint(sandbox: MXCSandbox) -> None:
+    resp = sandbox.execute("git --version")
+    assert resp.exit_code != 0
+    assert '{"error"' not in resp.output
+    assert "Blocked by sandbox policy: window-system access" in resp.output, resp.output
+
+
+@pytest.mark.skipif(not IS_WINDOWS, reason="Windows-only behaviour of the UI lock")
+def test_windows_git_runs_with_allow_ui(root: Path, executor: Path) -> None:
+    sandbox = MXCSandbox(root_dir=root, executor_path=executor, allow_ui=True)
+    resp = sandbox.execute("git --version")
+    assert resp.exit_code == 0, resp.output
+    assert "git version" in resp.output
 
 
 def test_output_truncation(root: Path, executor: Path) -> None:

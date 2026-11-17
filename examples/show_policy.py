@@ -19,14 +19,28 @@ from pathlib import Path
 
 from langchain_mxc import MXCExecutorNotFoundError, MXCSandbox
 
-EXERCISE_COMMANDS = [
+HOME = Path.home()
+
+POSIX_COMMANDS = [
     ("allowed: run the toolchain", "python --version && git --version"),
     ("allowed: write inside the project", "echo sandboxed > .mxc-demo && cat .mxc-demo && rm .mxc-demo"),
     ("allowed: write to the scratch $HOME", 'echo scratch > "$HOME/note.txt" && cat "$HOME/note.txt"'),
-    ("blocked: write outside the project", f"touch {Path.home() / 'mxc-should-not-exist.txt'}"),
-    ("blocked: read credentials", f"ls {Path.home() / '.ssh'}"),
+    ("blocked: write outside the project", f"touch {HOME / 'mxc-should-not-exist.txt'}"),
+    ("blocked: read credentials", f"ls {HOME / '.ssh'}"),
     ("network (off by default)", "curl -sS --max-time 5 https://example.com -o /dev/null && echo reached network"),
 ]
+
+WINDOWS_COMMANDS = [
+    ("allowed: run Python", "python --version"),
+    ("git (on Windows it needs the window system, so it only starts with --ui)", "git --version"),
+    ("allowed: write inside the project", "echo sandboxed> .mxc-demo && type .mxc-demo && del .mxc-demo"),
+    ("allowed: write to the scratch %USERPROFILE%", 'echo scratch> "%USERPROFILE%\\note.txt" && type "%USERPROFILE%\\note.txt"'),
+    ("blocked: write outside the project", f'echo x> "{HOME / "mxc-should-not-exist.txt"}"'),
+    ("blocked: read credentials", f'dir "{HOME / ".ssh"}"'),
+    ("network (off by default)", "curl.exe -sS --max-time 5 http://example.com -o NUL && echo reached network"),
+]
+
+EXERCISE_COMMANDS = WINDOWS_COMMANDS if sys.platform == "win32" else POSIX_COMMANDS
 
 
 def main() -> int:

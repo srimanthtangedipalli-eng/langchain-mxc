@@ -60,6 +60,7 @@ DEFAULT_GRACE_SECONDS = 5.0
 PROBE_TIMEOUT_SECONDS = 30.0
 
 _EXECUTOR_RUNTIME_FAILURE_EXIT = 255
+_NTSTATUS_ERROR_BASE = 0xC0000000
 _REQUEST_REJECTED_PREFIXES = ("Request error", "error: the '")
 
 
@@ -278,13 +279,13 @@ class ExecutorResult:
 
     @property
     def stdout_text(self) -> str:
-        """Stdout decoded as UTF-8 with replacement."""
-        return self.stdout.decode("utf-8", errors="replace")
+        """Stdout decoded as UTF-8 with replacement, with Windows line endings normalised."""
+        return self.stdout.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
     @property
     def stderr_text(self) -> str:
-        """Stderr decoded as UTF-8 with replacement."""
-        return self.stderr.decode("utf-8", errors="replace")
+        """Stderr decoded as UTF-8 with replacement, with Windows line endings normalised."""
+        return self.stderr.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
 
 ExecutorCommand = str | os.PathLike[str] | Sequence[str]
@@ -475,6 +476,9 @@ class Outcome:
     """Workload streams with any executor envelope removed."""
 
 
+_ENVELOPE_MARKER = '{"error":'
+
+
 def _parse_envelope(line: str) -> tuple[str | None, str] | None:
     line = line.strip()
     if not line.startswith("{"):
@@ -514,13 +518,26 @@ def classify_result(result: ExecutorResult) -> Outcome:
         first = lines[0].removeprefix("error: ").strip()
         return Outcome(kind="backend_unavailable", message=first, workload_stderr="")
 
-    if result.returncode == _EXECUTOR_RUNTIME_FAILURE_EXIT:
+    # The executor reports its own runtime failures as a JSON envelope on the
+    # last line of stderr. macOS and Linux exit 255 with the envelope on a line
+    # of its own. Observed on Windows (wxc-exec 1.0.1): when the workload cannot
+    # start, the exit code is the NTSTATUS (for example 0xC0000142) and the
+    # envelope follows the plain-text message on the same line. Other exit
+    # codes are left alone so a workload that prints its own JSON error to
+    # stderr is not mistaken for an executor failure.
+    if result.returncode == _EXECUTOR_RUNTIME_FAILURE_EXIT or (result.returncode or 0) >= _NTSTATUS_ERROR_BASE:
         err_lines = stderr.rstrip("\r\n").splitlines()
         if err_lines:
-            envelope = _parse_envelope(err_lines[-1])
+            last = err_lines[-1]
+            start = 0 if last.lstrip().startswith("{") else last.find(_ENVELOPE_MARKER)
+            envelope = _parse_envelope(last[start:]) if start >= 0 else None
             if envelope is not None:
                 code, message = envelope
-                remaining = "\n".join(err_lines[:-1])
+                kept = err_lines[:-1]
+                prefix = last[:start].strip()
+                if prefix and prefix != message.strip():
+                    kept.append(prefix)
+                remaining = "\n".join(kept)
                 if remaining:
                     remaining += "\n"
                 kind: OutcomeKind = "timeout" if "timed out" in message.lower() else "backend_error"

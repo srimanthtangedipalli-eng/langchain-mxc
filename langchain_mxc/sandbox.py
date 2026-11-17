@@ -70,6 +70,9 @@ _NETWORK_DENIAL = re.compile(
 )
 
 
+_UI_BLOCKED = re.compile(r"STATUS_DLL_INIT_FAILED|0xC0000142|Win32k", re.IGNORECASE)
+
+
 class MXCSandbox(FilesystemBackend, SandboxBackendProtocol):
     """Filesystem backend whose shell commands run inside an MXC sandbox.
 
@@ -323,6 +326,12 @@ class MXCSandbox(FilesystemBackend, SandboxBackendProtocol):
         if outcome.kind == "backend_error":
             partial = self._combine(outcome.workload_stdout, outcome.workload_stderr)
             output = f"Error: MXC failed while running the command ({outcome.code or 'error'}): {outcome.message}"
+            if not self._policy.allow_ui and _UI_BLOCKED.search(outcome.message):
+                # Observed on Windows: programs that load the window system
+                # (git.exe among them) cannot start while the UI is locked.
+                output += "\n" + BLOCKED_HINT.format(
+                    what="window-system access, which this program needs to start (MXCSandbox was created with allow_ui=False)"
+                )
             if partial != "<no output>":
                 output = f"{partial.rstrip()}\n\n{output}"
             return ExecuteResponse(output=output, exit_code=1, truncated=False)

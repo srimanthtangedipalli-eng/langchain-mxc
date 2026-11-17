@@ -284,3 +284,34 @@ as a non-root user. The npm bundle ships an arm64 `lxc-exec`.
   helper tool is missing.
 - Not verified: a non-container Linux host, x64, and `deniedPaths` against a
   real credential folder.
+
+## Windows, first run: observed 2026-11-17
+
+Host: Windows 11 26H1, build 28000.3501, ARM64. `wxc-exec.exe` 1.0.1 (arm64),
+not elevated, `wxc-host-prep.exe` never run.
+
+- A sandbox starts without host preparation. `--probe` reports
+  `tier: base-container`, `needsDaclAugmentation: false`,
+  `baseContainerSupportsDenyPaths: true`.
+- `--dry-run` prints `Dry run completed. Result: validation passed`, as on macOS.
+- The request shape built for macOS is accepted unchanged, including the
+  `cmd.exe /d /s /c "<command>"` wrap and the env with `SYSTEMROOT` and
+  `LOCALAPPDATA`.
+- Writes outside the project and to the home folder are blocked. The text is
+  `Access is denied.` with no path in it.
+- Network off: `curl` reports `Could not resolve host`. Loopback is blocked
+  too, so `ping 127.0.0.1` exits at once with code 1.
+- **`ui.disable: true` stops some programs from starting.** `git --version`
+  fails with `STATUS_DLL_INIT_FAILED (0xC0000142)`. The executor's exit code is
+  the NTSTATUS (3221225794), not 255, and the JSON envelope follows the
+  plain-text message on the same stderr line with no newline between them.
+  `classify_result` handles that shape for exit codes at or above 0xC0000000.
+- **`python -m pytest` crashes with `ui.disable: true`**: `Windows fatal
+  exception: code 0xc06d007e` (delay-load module not found) inside
+  `platform._wmi_query`, exit code 3228369022. `python --version` and plain
+  scripts run. Not yet confirmed that opening the UI fixes it;
+  `scripts/windows/diagnose.py` checks this.
+- Output uses CRLF line endings; the package normalises them to LF.
+- `--help` lists `--audit` ("permissive allow mode"). The package never passes it.
+- Not yet observed on Windows: `deniedPaths`, executor-side timeout, anything
+  on x64.

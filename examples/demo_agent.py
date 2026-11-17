@@ -188,11 +188,34 @@ def main() -> int:
     # Every tool call, tool result and model message is printed as it happens;
     # the agent's final report is the last message printed.
     seen = 0
+    messages: list = []
     for chunk in agent.stream({"messages": [{"role": "user", "content": TASK}]}, stream_mode="values"):
         messages = chunk.get("messages", [])
         for message in messages[seen:]:
             _print_step(message)
         seen = len(messages)
+    if scripted:
+        return _check_scripted_run(messages)
+    return 0
+
+
+def _check_scripted_run(messages: list) -> int:
+    """Fail loudly if the sandbox did not behave as the scripted steps expect."""
+    results = [m.content if isinstance(m.content, str) else str(m.content) for m in messages if isinstance(m, ToolMessage)]
+    expected_tool_results = 4
+    problems = []
+    if len(results) < expected_tool_results:
+        problems.append(f"expected {expected_tool_results} tool results, got {len(results)}")
+    else:
+        if "1 failed" not in results[0]:
+            problems.append("the first test run did not report the failing test")
+        if "passed" not in results[2] or "failed" in results[2]:
+            problems.append("the tests did not pass after the fix")
+        if "Blocked by sandbox policy" not in results[3]:
+            problems.append("reading the file outside the project was not reported as blocked")
+    if problems:
+        print("\nSCRIPTED RUN FAILED: " + "; ".join(problems) + ".")
+        return 1
     return 0
 
 

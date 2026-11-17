@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -247,6 +248,7 @@ def test_permission_denied_inside_root_is_not_a_policy_hint(sandbox: MXCSandbox,
     assert "Blocked by sandbox policy" not in resp.output
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="uses POSIX paths, which a Windows host does not treat as system folders")
 def test_denial_in_allowed_system_path_is_not_a_policy_hint(sandbox: MXCSandbox) -> None:
     resp = fmt(sandbox, result("", "/bin/sh: /usr/bin/x: Operation not permitted\n", 1))
     assert "Blocked by sandbox policy" not in resp.output
@@ -300,6 +302,7 @@ def test_bwrap_start_failure_is_a_backend_error_not_a_policy_block(sandbox: MXCS
     assert "Blocked by sandbox policy" not in response.output
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="simulates a Linux host with real POSIX paths")
 def test_linux_hidden_path_gets_the_blocked_hint(sandbox: MXCSandbox, tmp_path: Path) -> None:
     sandbox._host = dataclasses.replace(sandbox._host, platform="linux")
     outside = tmp_path / "outside"
@@ -339,3 +342,43 @@ def test_missing_file_wording_is_not_treated_as_a_block_off_linux(sandbox: MXCSa
         result(stderr=f"cat: {tmp_path}/gone.txt: No such file or directory\n", returncode=1), effective_timeout=10, custom_timeout=False
     )
     assert "Blocked by sandbox policy" not in response.output
+
+
+WINDOWS_UI_MESSAGE = (
+    "The target executable exited with STATUS_DLL_INIT_FAILED (0xC0000142). This often means the sandbox is blocking "
+    "Win32k system calls (UI subsystem access), which is often required to initialize."
+)
+
+
+def windows_ui_failure() -> ExecutorResult:
+    # Observed on Windows 11 build 28000 with wxc-exec 1.0.1: message and envelope share one line, exit code is the NTSTATUS.
+    envelope = json.dumps({"error": {"code": "backend_error", "message": WINDOWS_UI_MESSAGE}})
+    return result("", WINDOWS_UI_MESSAGE + envelope + "\r\n", 0xC0000142)
+
+
+def test_windows_same_line_envelope_is_a_backend_error_with_a_ui_hint(sandbox: MXCSandbox) -> None:
+    res = windows_ui_failure()
+    outcome = classify_result(res)
+    assert outcome.kind == "backend_error"
+    assert outcome.code == "backend_error"
+    assert outcome.workload_stderr == ""
+    resp = fmt(sandbox, res)
+    assert resp.exit_code == 1
+    assert '{"error"' not in resp.output
+    assert resp.output.count("STATUS_DLL_INIT_FAILED") == 1
+    assert "Blocked by sandbox policy: window-system access" in resp.output
+    assert "allow_ui=False" in resp.output
+
+
+def test_workload_json_error_on_stderr_is_not_an_executor_failure(sandbox: MXCSandbox) -> None:
+    res = result("", '{"error": {"code": "not_found", "message": "no such thing"}}\n', 1)
+    assert classify_result(res).kind == "workload"
+    resp = fmt(sandbox, res)
+    assert resp.exit_code == 1
+    assert "MXC failed" not in resp.output
+
+
+def test_crlf_output_is_normalised(sandbox: MXCSandbox) -> None:
+    resp = fmt(sandbox, result("one\r\ntwo\r\n", "", 0))
+    assert "\r" not in resp.output
+    assert "one\ntwo" in resp.output

@@ -57,7 +57,16 @@ test = [
 ]
 examples = [
     "langchain-anthropic",
-    "langchain-openai",
+    # tiktoken (a langchain-openai dependency) has no Windows ARM64 wheel.
+    "langchain-openai ; sys_platform != 'win32' or platform_machine != 'ARM64'",
+]
+
+[tool.uv]
+# Development lock only; does not affect the published package.
+# cryptography (via deepagents -> langchain-google-genai -> google-auth) stopped
+# shipping Windows ARM64 wheels after 46.0.3, and building it needs Rust.
+constraint-dependencies = [
+    "cryptography==46.0.3 ; sys_platform == 'win32' and platform_machine == 'ARM64'",
 ]
 
 [tool.pytest.ini_options]

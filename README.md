@@ -25,7 +25,7 @@ MXC uses one sandbox per command (process isolation), torn down when the command
 | --- | --- | --- |
 | Windows 11 | 24H2, build 26100.9278 or newer | Process container (AppContainer) |
 | macOS | 15 or newer | Seatbelt (`sandbox_init`) |
-| Linux | bubblewrap 0.5+ with unprivileged user namespaces enabled. `allow_network=True` also needs `slirp4netns` and `ip` (iproute2) on `PATH` | bubblewrap |
+| Linux | bubblewrap 0.5+ with unprivileged user namespaces enabled. `allow_network=True` also needs `slirp4netns`, `ip` (iproute2) and `iptables` installed | bubblewrap |
 
 Plus:
 

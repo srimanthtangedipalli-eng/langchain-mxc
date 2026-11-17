@@ -276,7 +276,7 @@ as a non-root user. The npm bundle ships an arm64 `lxc-exec`.
   egress allow with ingress and host loopback deny on every OS; macOS accepts
   that shape and reaches the network (verified). Egress allow also requires
   `slirp4netns` and `ip` on `PATH`; without them dry-run fails with
-  "network.egress requires 'slirp4netns' on PATH" / "requires 'ip' on PATH".
+  "network.egress requires 'slirp4netns' on PATH" / "requires 'ip' on PATH". Re-checked 2026-11-17 (Debian 12 container): it also requires `iptables` ("network.egress requires 'iptables', which was not found on PATH or in /usr/local/sbin, ..."); the package fails closed with that message.
   The container had `iproute2`, `iptables` and `nftables` installed when it
   passed; only `ip` was named as missing.
 - `--available-backends` prints JSON: `[{"backend": "bubblewrap",

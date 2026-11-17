@@ -20,7 +20,7 @@ Unlike remote sandbox providers, MXC does not create a separate machine. The age
 | :-- | :-- | :-- |
 | Windows 11 | 24H2, build 26100.9278 or newer | Process container |
 | macOS | 15 or newer (Apple silicon) | Seatbelt |
-| Linux | bubblewrap 0.5 or newer with unprivileged user namespaces | bubblewrap |
+| Linux | bubblewrap 0.5 or newer with unprivileged user namespaces. `allow_network=True` also needs `slirp4netns`, `iproute2`, and `iptables`. | bubblewrap |
 
 MXC is installed separately from the Python package. It ships in the `@microsoft/mxc-sdk` npm package, which requires Node.js 24 or newer to install.
 

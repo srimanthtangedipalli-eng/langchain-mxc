@@ -1,0 +1,116 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "langchain-mxc"
+description = "Microsoft Execution Containers (MXC) sandbox integration for Deep Agents"
+license = { text = "MIT" }
+readme = "README.md"
+
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+]
+
+version = "0.0.1"
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    "deepagents>=0.7.34,<0.8.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["langchain_mxc"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "langchain_mxc/",
+    "tests/",
+    "examples/",
+    "README.md",
+    "EXECUTOR_CONTRACT.md",
+    "LICENSE",
+]
+
+[project.urls]
+Homepage = "https://github.com/microsoft/mxc"
+Repository = "https://github.com/langchain-ai/deepagents"
+
+[dependency-groups]
+test = [
+    "pytest>=9.1.1,<10.0.0",
+    "pytest-timeout>=2.4.0,<3.0.0",
+    "pytest-asyncio>=1.4.0",
+    "pytest-socket",
+    "ruff>=0.15.20,<1.0.0",
+    "langchain-tests>=1.1.9",
+]
+examples = [
+    "langchain-anthropic",
+    "langchain-openai",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "requires_mxc: needs a real MXC executor on this machine",
+]
+
+[tool.ruff]
+line-length = 150
+target-version = "py311"
+
+[tool.ruff.format]
+docstring-code-format = true
+exclude = ["*.md"]  # README code blocks are aligned by hand
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812",  # Messes with the formatter
+    "ISC001",  # Messes with the formatter
+    "ANN401",  # typing.Any is fine for generic wrappers
+    "S603",    # subprocess without shell=True is the whole point here
+    "S607",    # we resolve tool names (ps, taskkill, npm) through PATH on purpose
+    "PLR0913", # the public constructor mirrors LocalShellBackend
+    "FBT001",  # boolean positional in protocol signatures
+    "FBT002",
+    "FBT003",
+    "CPY001",  # no copyright headers in this repo
+    "TC003",   # runtime imports of collections.abc are fine
+    "PTH",     # os.path is used deliberately: the policy builder works on foreign-OS paths
+    "PERF401", # explicit loops read better than comprehensions in the policy builder
+    "SIM105",  # try/except/pass is clearer than contextlib.suppress in kill paths
+    "PLW0108", # small lambdas are fine
+    "C901",    # policy/kill helpers are long but linear
+    "PLR0911",
+    "PLR0912",
+    "PLR0915", # the probe is a linear checklist
+]
+extend-safe-fixes = ["PLR6201"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "D", "ANN", "PLR2004", "SLF001", "S108", "INP001"]
+"examples/**" = ["D", "INP001", "T201", "S101", "PLR2004", "E501"]
+"scripts/**" = ["D", "INP001", "T201"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+ignore-var-parameters = true
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.coverage.run]
+omit = ["tests/*"]
